@@ -19,6 +19,7 @@ class HomeActivity final : public Activity {
   const std::function<void()> onReaderOpen;
   const std::function<void()> onSettingsOpen;
   const std::function<void()> onFileTransferOpen;
+  const std::function<void()> onImageViewerOpen;
 
   static void taskTrampoline(void* param);
   [[noreturn]] void displayTaskLoop();
@@ -28,12 +29,14 @@ class HomeActivity final : public Activity {
  public:
   explicit HomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
                         const std::function<void()>& onContinueReading, const std::function<void()>& onReaderOpen,
-                        const std::function<void()>& onSettingsOpen, const std::function<void()>& onFileTransferOpen)
+                        const std::function<void()>& onSettingsOpen, const std::function<void()>& onFileTransferOpen,
+                        const std::function<void()>& onImageViewerOpen)
       : Activity("Home", renderer, mappedInput),
         onContinueReading(onContinueReading),
         onReaderOpen(onReaderOpen),
         onSettingsOpen(onSettingsOpen),
-        onFileTransferOpen(onFileTransferOpen) {}
+        onFileTransferOpen(onFileTransferOpen),
+        onImageViewerOpen(onImageViewerOpen) {}
   void onEnter() override;
   void onExit() override;
   void loop() override;
