@@ -450,7 +450,22 @@ void ImageViewerActivity::renderViewer() const {
 
     Bitmap bmp(file);
     if (bmp.parseHeaders() == BmpReaderError::Ok) {
-         renderer.drawBitmap(bmp, 0, 0, renderer.getScreenWidth(), renderer.getScreenHeight());
+         const int screenWidth = renderer.getScreenWidth();
+         const int screenHeight = renderer.getScreenHeight();
+         const int imgWidth = bmp.getWidth();
+         const int imgHeight = bmp.getHeight();
+
+         // Center the image if it's smaller than the screen
+         int x = 0;
+         int y = 0;
+         if (imgWidth < screenWidth) {
+             x = (screenWidth - imgWidth) / 2;
+         }
+         if (imgHeight < screenHeight) {
+             y = (screenHeight - imgHeight) / 2;
+         }
+
+         renderer.drawBitmap(bmp, x, y, screenWidth, screenHeight);
     } else {
          renderer.drawCenteredText(UI_12_FONT_ID, renderer.getScreenHeight()/2, "Invalid image format");
     }
