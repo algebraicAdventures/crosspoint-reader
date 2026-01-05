@@ -17,7 +17,8 @@ class ImageViewerActivity final : public Activity {
     Browsing,
     Viewing,
     Slideshow,
-    Settings
+    Settings,
+    ImageSettings  // Brightness/contrast adjustment for current image
   };
 
   State state = State::Browsing;
@@ -32,10 +33,15 @@ class ImageViewerActivity final : public Activity {
   int currentImageIndex = 0;
   unsigned long lastSlideTime = 0;
 
-  // Settings
+  // Slideshow Settings
   int slideshowIntervalSeconds = 5;
   const int availableIntervals[5] = {3, 5, 10, 30, 60};
   int intervalIndex = 1; // Default to 5s
+
+  // Image Settings (brightness/contrast)
+  int brightness = 0;         // Range: -50 to +50, default 0
+  int contrast = 0;           // Range: -50 to +50, default 0
+  int imageSettingSelection = 0;  // 0 = brightness, 1 = contrast
 
   bool updateRequired = false;
 
@@ -49,6 +55,7 @@ class ImageViewerActivity final : public Activity {
   void renderBrowser() const;
   void renderViewer() const;
   void renderSettings() const;
+  void renderImageSettings() const;
 
   void loadFiles();
   void loadImageList();

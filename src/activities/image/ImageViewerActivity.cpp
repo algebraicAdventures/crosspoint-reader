@@ -162,8 +162,8 @@ void ImageViewerActivity::onExit() {
 void ImageViewerActivity::loop() {
   const bool prevReleased = mappedInput.wasReleased(MappedInputManager::Button::Up) ||
                             mappedInput.wasReleased(MappedInputManager::Button::Left);
-  const bool nextReleased = mappedInput.wasReleased(MappedInputManager::Button::Down) ||
-                            mappedInput.wasReleased(MappedInputManager::Button::Right);
+  const bool nextReleased = mappedInput.wasReleased(MappedInputManager::Button::Down);
+  const bool settingsReleased = mappedInput.wasReleased(MappedInputManager::Button::Right);
   const bool confirmReleased = mappedInput.wasReleased(MappedInputManager::Button::Confirm);
   const bool backReleased = mappedInput.wasReleased(MappedInputManager::Button::Back);
 
@@ -233,16 +233,11 @@ void ImageViewerActivity::loop() {
         }
         xSemaphoreGive(renderingMutex);
         updateRequired = true;
-      }
-
-      // Access settings via long press confirm on "< Slideshow >"?
-      // Let's check for long press confirm to enter settings
-      if (mappedInput.isPressed(MappedInputManager::Button::Confirm) && mappedInput.getHeldTime() > 1000) {
-           xSemaphoreTake(renderingMutex, portMAX_DELAY);
-           state = State::Settings;
-           xSemaphoreGive(renderingMutex);
-           updateRequired = true;
-           // Don't wait loop here to avoid blocking main thread and messing up input state
+      } else if (settingsReleased) {
+        xSemaphoreTake(renderingMutex, portMAX_DELAY);
+        state = State::Settings;
+        xSemaphoreGive(renderingMutex);
+        updateRequired = true;
       }
 
   } else if (state == State::Viewing) {
@@ -261,6 +256,13 @@ void ImageViewerActivity::loop() {
            std::string currentImage = imageFiles[currentImageIndex];
            xSemaphoreGive(renderingMutex);
            startSlideshow(currentImage);
+      } else if (settingsReleased) {
+          // Open image settings (brightness/contrast)
+          xSemaphoreTake(renderingMutex, portMAX_DELAY);
+          imageSettingSelection = 0;  // Start with brightness selected
+          state = State::ImageSettings;
+          xSemaphoreGive(renderingMutex);
+          updateRequired = true;
       }
   } else if (state == State::Slideshow) {
       if (backReleased || confirmReleased) {
@@ -295,6 +297,53 @@ void ImageViewerActivity::loop() {
           xSemaphoreTake(renderingMutex, portMAX_DELAY);
           intervalIndex = (intervalIndex + 1) % 5;
           slideshowIntervalSeconds = availableIntervals[intervalIndex];
+          xSemaphoreGive(renderingMutex);
+          updateRequired = true;
+      }
+  } else if (state == State::ImageSettings) {
+      // Image brightness/contrast settings
+      // Use direct button checks for cleaner control
+      const bool upReleased = mappedInput.wasReleased(MappedInputManager::Button::Up);
+      const bool downReleased = mappedInput.wasReleased(MappedInputManager::Button::Down);
+      const bool leftReleased = mappedInput.wasReleased(MappedInputManager::Button::Left);
+      const bool rightReleased = mappedInput.wasReleased(MappedInputManager::Button::Right);
+
+      if (backReleased) {
+          // Cancel and return to viewing
+          xSemaphoreTake(renderingMutex, portMAX_DELAY);
+          state = State::Viewing;
+          xSemaphoreGive(renderingMutex);
+          updateRequired = true;
+      } else if (confirmReleased) {
+          // Apply settings and return to viewing
+          xSemaphoreTake(renderingMutex, portMAX_DELAY);
+          state = State::Viewing;
+          xSemaphoreGive(renderingMutex);
+          updateRequired = true;
+      } else if (upReleased || downReleased) {
+          // Toggle between brightness (0) and contrast (1)
+          xSemaphoreTake(renderingMutex, portMAX_DELAY);
+          imageSettingSelection = (imageSettingSelection + 1) % 2;
+          xSemaphoreGive(renderingMutex);
+          updateRequired = true;
+      } else if (leftReleased) {
+          // Decrease current setting
+          xSemaphoreTake(renderingMutex, portMAX_DELAY);
+          if (imageSettingSelection == 0) {
+              brightness = std::max(-50, brightness - 1);
+          } else {
+              contrast = std::max(-50, contrast - 1);
+          }
+          xSemaphoreGive(renderingMutex);
+          updateRequired = true;
+      } else if (rightReleased) {
+          // Increase current setting
+          xSemaphoreTake(renderingMutex, portMAX_DELAY);
+          if (imageSettingSelection == 0) {
+              brightness = std::min(50, brightness + 1);
+          } else {
+              contrast = std::min(50, contrast + 1);
+          }
           xSemaphoreGive(renderingMutex);
           updateRequired = true;
       }
@@ -385,6 +434,8 @@ void ImageViewerActivity::render() const {
       renderViewer();
   } else if (state == State::Settings) {
       renderSettings();
+  } else if (state == State::ImageSettings) {
+      renderImageSettings();
   }
 
   renderer.displayBuffer();
@@ -395,7 +446,7 @@ void ImageViewerActivity::renderBrowser() const {
   renderer.drawCenteredText(UI_12_FONT_ID, 15, "Image Viewer", true, EpdFontFamily::BOLD);
 
   // Help text
-  const auto labels = mappedInput.mapLabels("Back", "Open", "Hold for Settings", "");
+  const auto labels = mappedInput.mapLabels("Back", "Open", "", "Settings");
   renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 
   if (files.empty()) {
@@ -450,6 +501,10 @@ void ImageViewerActivity::renderViewer() const {
 
     Bitmap bmp(file);
     if (bmp.parseHeaders() == BmpReaderError::Ok) {
+         // Apply brightness/contrast settings
+         bmp.setBrightness(brightness);
+         bmp.setContrast(contrast);
+
          const int screenWidth = renderer.getScreenWidth();
          const int screenHeight = renderer.getScreenHeight();
          const int imgWidth = bmp.getWidth();
@@ -477,7 +532,9 @@ void ImageViewerActivity::renderViewer() const {
 
     // Draw overlays if not slideshow
     if (state != State::Slideshow) {
-         renderer.drawText(UI_10_FONT_ID, 5, renderer.getScreenHeight() - 20, imageFiles[currentImageIndex].c_str());
+         // Show button hints only (filename shown in settings)
+         const auto labels = mappedInput.mapLabels("Back", "Slideshow", "<  >", "Adjust");
+         renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
     }
 }
 
@@ -490,4 +547,90 @@ void ImageViewerActivity::renderSettings() const {
 
     renderer.drawCenteredText(UI_10_FONT_ID, 250, "< Change Interval >");
     renderer.drawCenteredText(UI_10_FONT_ID, 300, "Press Confirm/Back to Exit");
+}
+
+void ImageViewerActivity::renderImageSettings() const {
+    const int screenWidth = renderer.getScreenWidth();
+    const int screenHeight = renderer.getScreenHeight();
+
+    // Draw semi-transparent overlay panel
+    constexpr int panelWidth = 340;
+    constexpr int panelHeight = 280;
+    const int panelX = (screenWidth - panelWidth) / 2;
+    const int panelY = (screenHeight - panelHeight) / 2;
+
+    // Draw panel background (white) with border
+    renderer.fillRect(panelX, panelY, panelWidth, panelHeight, false);
+    renderer.drawRect(panelX, panelY, panelWidth, panelHeight, true);
+    renderer.drawRect(panelX + 1, panelY + 1, panelWidth - 2, panelHeight - 2, true);
+
+    // Title
+    renderer.drawCenteredText(UI_12_FONT_ID, panelY + 20, "Image Settings", true, EpdFontFamily::BOLD);
+
+    // Show filename below title
+    if (!imageFiles.empty() && currentImageIndex < imageFiles.size()) {
+        auto truncatedName = renderer.truncatedText(UI_10_FONT_ID, imageFiles[currentImageIndex].c_str(), panelWidth - 40);
+        renderer.drawCenteredText(UI_10_FONT_ID, panelY + 42, truncatedName.c_str());
+    }
+
+    // Draw separator line
+    renderer.drawLine(panelX + 20, panelY + 65, panelX + panelWidth - 20, panelY + 65);
+
+    // Settings items
+    constexpr int itemStartY = 90;
+    constexpr int itemHeight = 60;
+    constexpr int barWidth = 200;
+    constexpr int barHeight = 20;
+    const int barX = (screenWidth - barWidth) / 2;
+
+    // Brightness setting
+    const int brightnessY = panelY + itemStartY;
+    if (imageSettingSelection == 0) {
+        // Highlight selected item
+        renderer.fillRect(panelX + 10, brightnessY - 5, panelWidth - 20, itemHeight + 10);
+    }
+    renderer.drawCenteredText(UI_10_FONT_ID, brightnessY, "Brightness", imageSettingSelection != 0);
+
+    // Draw brightness bar
+    const int brightnessBarY = brightnessY + 25;
+    renderer.drawRect(barX, brightnessBarY, barWidth, barHeight, imageSettingSelection != 0);
+    // Fill bar based on brightness value (-50 to +50 mapped to 0-100%)
+    const int brightnessPercent = (brightness + 50);  // 0 to 100
+    const int brightnessWidth = (barWidth - 4) * brightnessPercent / 100;
+    if (brightnessWidth > 0) {
+        renderer.fillRect(barX + 2, brightnessBarY + 2, brightnessWidth, barHeight - 4, imageSettingSelection != 0);
+    }
+    // Draw center marker
+    renderer.drawLine(barX + barWidth / 2, brightnessBarY - 3, barX + barWidth / 2, brightnessBarY + barHeight + 3, imageSettingSelection != 0);
+    // Draw value below the bar
+    char valBuf[16];
+    sprintf(valBuf, "%+d", brightness);
+    renderer.drawCenteredText(UI_10_FONT_ID, brightnessBarY + barHeight + 5, valBuf, imageSettingSelection != 0);
+
+    // Contrast setting
+    const int contrastY = panelY + itemStartY + itemHeight + 30;
+    if (imageSettingSelection == 1) {
+        // Highlight selected item
+        renderer.fillRect(panelX + 10, contrastY - 5, panelWidth - 20, itemHeight + 10);
+    }
+    renderer.drawCenteredText(UI_10_FONT_ID, contrastY, "Contrast", imageSettingSelection != 1);
+
+    // Draw contrast bar
+    const int contrastBarY = contrastY + 25;
+    renderer.drawRect(barX, contrastBarY, barWidth, barHeight, imageSettingSelection != 1);
+    // Fill bar based on contrast value (-50 to +50 mapped to 0-100%)
+    const int contrastPercent = (contrast + 50);  // 0 to 100
+    const int contrastWidth = (barWidth - 4) * contrastPercent / 100;
+    if (contrastWidth > 0) {
+        renderer.fillRect(barX + 2, contrastBarY + 2, contrastWidth, barHeight - 4, imageSettingSelection != 1);
+    }
+    // Draw center marker
+    renderer.drawLine(barX + barWidth / 2, contrastBarY - 3, barX + barWidth / 2, contrastBarY + barHeight + 3, imageSettingSelection != 1);
+    // Draw value below the bar
+    sprintf(valBuf, "%+d", contrast);
+    renderer.drawCenteredText(UI_10_FONT_ID, contrastBarY + barHeight + 5, valBuf, imageSettingSelection != 1);
+
+    // Instructions at bottom
+    const auto labels = mappedInput.mapLabels("Cancel", "Apply", "<  >", "Adjust");
+    renderer.drawButtonHints(UI_10_FONT_ID, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
 }
