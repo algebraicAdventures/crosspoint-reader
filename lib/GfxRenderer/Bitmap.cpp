@@ -28,9 +28,31 @@ static inline int applyGamma(int gray) {
   return x > 255 ? 255 : x;
 }
 
+// Apply runtime brightness and contrast adjustments
+static inline int applyBrightnessContrast(int gray, int brightness, int contrast) {
+  // Apply contrast first: (value - 128) * factor + 128
+  // contrast range is -50 to +50, map to 0.5x to 1.5x multiplier
+  if (contrast != 0) {
+    int factor = 100 + contrast;  // 50 to 150
+    gray = ((gray - 128) * factor) / 100 + 128;
+  }
+  // Apply brightness offset
+  if (brightness != 0) {
+    gray += brightness;
+  }
+  // Clamp to valid range
+  if (gray < 0) gray = 0;
+  if (gray > 255) gray = 255;
+  return gray;
+}
+
 // Simple quantization without dithering - just divide into 4 levels
-static inline uint8_t quantizeSimple(int gray) {
-  if (USE_BRIGHTNESS) {
+static inline uint8_t quantizeSimple(int gray, int brightness = 0, int contrast = 0) {
+  // Apply runtime brightness/contrast if set
+  if (brightness != 0 || contrast != 0) {
+    gray = applyBrightnessContrast(gray, brightness, contrast);
+  } else if (USE_BRIGHTNESS) {
+    // Fallback to compile-time brightness settings
     gray += BRIGHTNESS_BOOST;
     if (gray > 255) gray = 255;
     gray = applyGamma(gray);
@@ -39,8 +61,12 @@ static inline uint8_t quantizeSimple(int gray) {
 }
 
 // Hash-based noise dithering - survives downsampling without moiré artifacts
-static inline uint8_t quantizeNoise(int gray, int x, int y) {
-  if (USE_BRIGHTNESS) {
+static inline uint8_t quantizeNoise(int gray, int x, int y, int brightness = 0, int contrast = 0) {
+  // Apply runtime brightness/contrast if set
+  if (brightness != 0 || contrast != 0) {
+    gray = applyBrightnessContrast(gray, brightness, contrast);
+  } else if (USE_BRIGHTNESS) {
+    // Fallback to compile-time brightness settings
     gray += BRIGHTNESS_BOOST;
     if (gray > 255) gray = 255;
     gray = applyGamma(gray);
@@ -61,11 +87,11 @@ static inline uint8_t quantizeNoise(int gray, int x, int y) {
 }
 
 // Main quantization function
-static inline uint8_t quantize(int gray, int x, int y) {
+static inline uint8_t quantize(int gray, int x, int y, int brightness = 0, int contrast = 0) {
   if (USE_NOISE_DITHERING) {
-    return quantizeNoise(gray, x, y);
+    return quantizeNoise(gray, x, y, brightness, contrast);
   } else {
-    return quantizeSimple(gray);
+    return quantizeSimple(gray, brightness, contrast);
   }
 }
 
@@ -284,15 +310,19 @@ BmpReaderError Bitmap::readRow(uint8_t* data, uint8_t* rowBuffer, int rowY) cons
   int bitShift = 6;
   int currentX = 0;
 
+  // Capture runtime brightness/contrast for this bitmap
+  const int rtBrightness = runtimeBrightness;
+  const int rtContrast = runtimeContrast;
+
   // Helper lambda to pack 2bpp color into the output stream
   auto packPixel = [&](const uint8_t lum) {
     uint8_t color;
     if (useFS) {
-      // Floyd-Steinberg error diffusion
+      // Floyd-Steinberg error diffusion (doesn't support runtime brightness/contrast yet)
       color = quantizeFloydSteinberg(lum, currentX, width, errorCurRow, errorNextRow, false);
     } else {
-      // Simple quantization or noise dithering
-      color = quantize(lum, currentX, rowY);
+      // Simple quantization or noise dithering with runtime brightness/contrast
+      color = quantize(lum, currentX, rowY, rtBrightness, rtContrast);
     }
     currentOutByte |= (color << bitShift);
     if (bitShift == 0) {

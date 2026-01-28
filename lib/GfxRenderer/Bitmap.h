@@ -39,6 +39,12 @@ class Bitmap {
   bool hasGreyscale() const { return bpp > 1; }
   int getRowBytes() const { return rowBytes; }
 
+  // Runtime brightness/contrast adjustment
+  void setBrightness(int value) { runtimeBrightness = value; }
+  void setContrast(int value) { runtimeContrast = value; }
+  int getBrightness() const { return runtimeBrightness; }
+  int getContrast() const { return runtimeContrast; }
+
  private:
   static uint16_t readLE16(FsFile& f);
   static uint32_t readLE32(FsFile& f);
@@ -56,4 +62,8 @@ class Bitmap {
   mutable int16_t* errorCurRow = nullptr;
   mutable int16_t* errorNextRow = nullptr;
   mutable int lastRowY = -1;  // Track row progression for error propagation
+
+  // Runtime brightness/contrast (mutable for const readRow method)
+  mutable int runtimeBrightness = 0;  // Range: -50 to +50
+  mutable int runtimeContrast = 0;    // Range: -50 to +50
 };
