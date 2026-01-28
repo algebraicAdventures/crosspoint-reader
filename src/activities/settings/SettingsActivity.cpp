@@ -9,10 +9,14 @@
 
 // Define the static settings list
 namespace {
-constexpr int settingsCount = 11;
+constexpr int settingsCount = 12;
 const SettingInfo settingsList[settingsCount] = {
     // Should match with SLEEP_SCREEN_MODE
     {"Sleep Screen", SettingType::ENUM, &CrossPointSettings::sleepScreen, {"Dark", "Light", "Custom", "Cover"}},
+    {"Sleep Timeout",
+     SettingType::ENUM,
+     &CrossPointSettings::sleepTimeout,
+     {"5 Mins", "10 Mins", "15 Mins", "30 Mins", "1 Hour", "Never"}},
     {"Status Bar", SettingType::ENUM, &CrossPointSettings::statusBar, {"None", "No Progress", "Full"}},
     {"Extra Paragraph Spacing", SettingType::TOGGLE, &CrossPointSettings::extraParagraphSpacing, {}},
     {"Short Power Button Click", SettingType::TOGGLE, &CrossPointSettings::shortPwrBtn, {}},

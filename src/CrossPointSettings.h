@@ -46,6 +46,11 @@ class CrossPointSettings {
 
   // Sleep screen settings
   uint8_t sleepScreen = DARK;
+  // Sleep timeout settings
+  // Default: 10 minutes
+  enum SLEEP_TIMEOUT { MIN_5 = 0, MIN_10 = 1, MIN_15 = 2, MIN_30 = 3, HOUR_1 = 4, NEVER = 5 };
+  uint8_t sleepTimeout = MIN_10;
+
   // Status bar settings
   uint8_t statusBar = FULL;
   // Text rendering settings
@@ -69,6 +74,7 @@ class CrossPointSettings {
   static CrossPointSettings& getInstance() { return instance; }
 
   uint16_t getPowerButtonDuration() const { return shortPwrBtn ? 10 : 400; }
+  unsigned long getSleepTimeoutMs() const;
   int getReaderFontId() const;
 
   bool saveToFile() const;

@@ -12,7 +12,7 @@ CrossPointSettings CrossPointSettings::instance;
 namespace {
 constexpr uint8_t SETTINGS_FILE_VERSION = 1;
 // Increment this when adding new persisted settings fields
-constexpr uint8_t SETTINGS_COUNT = 10;
+constexpr uint8_t SETTINGS_COUNT = 11;
 constexpr char SETTINGS_FILE[] = "/.crosspoint/settings.bin";
 }  // namespace
 
@@ -37,6 +37,7 @@ bool CrossPointSettings::saveToFile() const {
   serialization::writePod(outputFile, fontFamily);
   serialization::writePod(outputFile, fontSize);
   serialization::writePod(outputFile, lineSpacing);
+  serialization::writePod(outputFile, sleepTimeout);
   outputFile.close();
 
   Serial.printf("[%lu] [CPS] Settings saved to file\n", millis());
@@ -83,11 +84,31 @@ bool CrossPointSettings::loadFromFile() {
     if (++settingsRead >= fileSettingsCount) break;
     serialization::readPod(inputFile, lineSpacing);
     if (++settingsRead >= fileSettingsCount) break;
+    serialization::readPod(inputFile, sleepTimeout);
+    if (++settingsRead >= fileSettingsCount) break;
   } while (false);
 
   inputFile.close();
   Serial.printf("[%lu] [CPS] Settings loaded from file\n", millis());
   return true;
+}
+
+unsigned long CrossPointSettings::getSleepTimeoutMs() const {
+  switch (sleepTimeout) {
+    case MIN_5:
+      return 5 * 60 * 1000;
+    case MIN_10:
+    default:
+      return 10 * 60 * 1000;
+    case MIN_15:
+      return 15 * 60 * 1000;
+    case MIN_30:
+      return 30 * 60 * 1000;
+    case HOUR_1:
+      return 60 * 60 * 1000;
+    case NEVER:
+      return 0;
+  }
 }
 
 float CrossPointSettings::getReaderLineCompression() const {
